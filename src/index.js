@@ -12,6 +12,7 @@ import "dotenv/config";
 // path and fileURLToPath help us build reliable file-system paths in ES modules.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 
 // Express is the web-server framework used in this demo.
 import express from "express";
@@ -44,6 +45,44 @@ const __dirname = path.dirname(__filename);
 // publicDir points to the project's /public folder.
 const publicDir = path.join(__dirname, "..", "public");
 
+// Each session owns an isolated in-memory conversation history.
+// The server retains this history until it restarts.
+const conversationSessions = new Map();
+const MAX_HISTORY_ITEMS = 40;
+
+function createConversationSession(sessionId) {
+  let items = [];
+
+  const session = {
+    async getSessionId() {
+      return sessionId;
+    },
+    async getItems(limit) {
+      if (typeof limit === "number") {
+        return items.slice(-limit);
+      }
+      return [...items];
+    },
+    async addItems(newItems) {
+      items.push(...newItems);
+      items = items.slice(-MAX_HISTORY_ITEMS);
+    },
+    async popItem() {
+      return items.pop();
+    },
+    async clearSession() {
+      items = [];
+    },
+  };
+
+  conversationSessions.set(sessionId, session);
+  return session;
+}
+
+function getConversationSession(sessionId) {
+  return conversationSessions.get(sessionId) || createConversationSession(sessionId);
+}
+
 // express.json() allows Express to read JSON request bodies such as
 // { "prompt": "What do you think about this product?" }.
 app.use(express.json());
@@ -66,19 +105,28 @@ app.post("/api/chat", async (req, res) => {
   // Validate that req.body.prompt exists and is a string.
   // Optional chaining (?.) avoids an error if req.body is missing.
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const suppliedSessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId.trim() : "";
+  const sessionId = suppliedSessionId || randomUUID();
 
   if (!prompt) {
     return res.status(400).json({ error: "Prompt cannot be empty." });
   }
 
-  try {
-    // Run the Persona Agent using this one prompt as input.
-    // At this stage the demo is intentionally stateless: each request is
-    // independent and previous interview turns are not sent automatically.
-    const result = await run(ellaAgent, prompt);
+  if (suppliedSessionId.length > 128) {
+    return res.status(400).json({ error: "Session ID is too long." });
+  }
 
-    // Send only the final text response back to the browser as JSON.
-    return res.json({ response: result.finalOutput });
+  try {
+    const session = getConversationSession(sessionId);
+    const result = await run(ellaAgent, prompt, {
+      session,
+      sessionInputCallback: (historyItems, newItems) =>
+        [...historyItems, ...newItems].slice(-MAX_HISTORY_ITEMS),
+    });
+
+    // The session ID lets the browser keep using the same isolated history.
+    return res.json({ response: result.finalOutput, sessionId });
   } catch (error) {
     // Log the detailed error on the server, but return a simple message to the UI.
     console.error("Agent run failed:", error);

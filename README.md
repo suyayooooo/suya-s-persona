@@ -128,6 +128,27 @@ git push
 
 Review `git status` and staged files before committing. If `git add .` staged anything sensitive, unstage it first.
 
+## Memory implementation plan
+
+Build memory in two stages:
+
+1. **Session memory:** Give each conversation a session ID and provide its recent turns to Ella with each request. This lets Ella recall earlier messages in the same conversation. An in-memory server store is a simple prototype, but its contents disappear when the server restarts.
+2. **Persistent memory (optional):** Save selected facts in a database so they can be used in later conversations. Retrieve only memories relevant to the current message.
+
+Store memories as readable facts with metadata, rather than as keywords alone. For example:
+
+~~~json
+{
+  "text": "The user's dog is named Cookie.",
+  "category": "pets",
+  "created_at": "2026-11-24",
+  "source": "conversation",
+  "user_id": "..."
+}
+~~~
+
+Categories and tags can help retrieve memories, but the readable text preserves their meaning. Before adding persistent storage, decide what may be saved, how long it is kept, and how users can review, edit, or delete it. Keep personal data and API keys out of GitHub. A local database such as SQLite can suit a prototype; a hosted app can use a managed database such as PostgreSQL.
+
 ## 7. Creative extension
 
 Once session memory works, develop at least one idea of your own. For example: redesign Ella's personality or role, introduce multiple Personas, add a visible memory/reset control, improve the interview interface, or let the Persona use a tool.
@@ -168,3 +189,5 @@ Persona identity, interests, and behavior guidelines live in **src/personas/001.
 - **Memory seems to work only in the interface:** inspect the requests to `/api/chat` and confirm earlier turns reach the Agent.
 
 Do not publish API keys, personal interview data, or material you do not have permission to distribute.
+
+

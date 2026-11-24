@@ -26,6 +26,16 @@ const initialMessage = document.querySelector("#initialMessage");
 // "let" is used because their values will change later.
 let persona = null;
 let personaImage = "";
+const sessionStorageKey = "ai-persona-session-id";
+let sessionId = sessionStorage.getItem(sessionStorageKey);
+
+if (!sessionId) {
+  sessionId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  sessionStorage.setItem(sessionStorageKey, sessionId);
+}
 
 // Move the conversation window to the newest message.
 function scrollToLatest() {
@@ -150,7 +160,7 @@ async function submitPrompt() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, sessionId }),
     });
 
     const data = await response.json();
@@ -162,6 +172,10 @@ async function submitPrompt() {
     // Replace the temporary Thinking message with the real Agent response.
     thinkingMessage.bubble.classList.remove("thinking-bubble");
     thinkingMessage.bubble.textContent = data.response;
+    if (data.sessionId) {
+      sessionId = data.sessionId;
+      sessionStorage.setItem(sessionStorageKey, sessionId);
+    }
   } catch (error) {
     // Network errors and server errors are both handled here.
     thinkingMessage.bubble.classList.remove("thinking-bubble");
